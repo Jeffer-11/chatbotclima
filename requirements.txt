@@ -1,0 +1,7 @@
+requests==2.31.0 # para hacer peticiones HTTP   
+flask==2.3.3 # para crear la API
+python-dotenv==1.0.0 # para cargar variables de entorno
+pytz==2023.3 # para manejar zonas horarias
+timezonefinder==6.5.9 # para encontrar la zona horaria de una ubicación
+nltk==3.8.1 # para procesamiento del lenguaje natural
+

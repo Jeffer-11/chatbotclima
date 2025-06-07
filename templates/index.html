@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <title>Chatbot del Clima</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>Asistente del Clima 🌦️ by: Jefferson Bone</h1>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="message bot-message">¡Hola! Soy tu asistente de clima. Puedes preguntarme sobre el clima o la hora en cualquier ciudad del mundo.</div>
+        </div>
+        <div class="chat-input">
+            <div class="input-group">
+                <input type="text" id="user-input" placeholder="Escribe tu mensaje..." autofocus>
+                <button type="button" id="location-btn" title="Usar mi ubicación actual">
+                    <i class="material-icons">my_location</i>
+                </button>
+                <button id="send-button" class="send-button">Enviar</button>
+            </div>
+        </div>
+        <style>
+        .input-group {
+            display: flex;
+            gap: 5px;
+            width: 100%;
+        }
+        #location-btn {
+            width: 40px;
+            height: 40px;
+            background: #96b1db; /* Color azul más suave */
+            color: white;
+            border: none;
+            border-radius: 50%; /* Hace el botón redondo */
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        #location-btn:hover {
+            background: #3a5a80; /* Color más oscuro al pasar el mouse */
+            transform: scale(1.05);
+        }
+        #location-btn i {
+            font-size: 20px; /* Tamaño del ícono */
+        }
+        #send-button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            padding: 0 20px;
+            height: 40px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        #send-button:hover {
+            background: #357abd;
+            transform: translateY(-1px);
+        }
+        </style>
+    </div>
+    
+    <!-- Reemplazar la plantilla del clima existente -->
+<template id="weather-template">
+    <div class="weather-card">
+        <div class="weather-location">
+            <span class="icon">📍</span>
+            <span class="city"></span>
+        </div>
+        
+        <div class="weather-main">
+            <div class="weather-temp">
+                <span class="temp"></span>°<span class="temp-unit">C</span>
+            </div>
+            <div class="weather-condition">
+                <div class="condition-text"></div>
+            </div>
+        </div>
+        
+        <div class="weather-details">
+            <div class="weather-detail-item">
+                <span>💧</span>
+                <div class="weather-detail-value humidity"></div>
+                <div class="weather-detail-label">%</div>
+            </div>
+            <div class="weather-detail-item">
+                <span>💨</span>
+                <div class="weather-detail-value wind"></div>
+                <div class="weather-detail-label">km/h</div>
+            </div>
+            <div class="weather-detail-item">
+                <span>🌡️</span>
+                <div class="weather-detail-value pressure"></div>
+                <div class="weather-detail-label">hPa</div>
+            </div>
+        </div>
+        
+        <div class="weather-time">
+            <span class="time"></span>
+        </div>
+    </div>
+</template>
+
+<!-- Update time card template -->
+<template id="time-template">
+    <div class="weather-card">
+        <div class="weather-location">
+            <span class="icon">⌚</span>
+            <span class="city"></span>
+        </div>
+        
+        <div class="weather-main">
+            <div class="weather-temp">
+                <span class="current-time" data-timezone=""></span>
+            </div>
+            <div class="weather-condition">
+                <div class="time-format"></div>
+                <div class="time-moment"></div>
+            </div>
+        </div>
+        
+        <div class="weather-details">
+            <div class="weather-detail-item">
+                <span>📅</span>
+                <div class="weather-detail-value weekday"></div>
+            </div>
+            <div class="weather-detail-item">
+                <span>🌐</span>
+                <div class="weather-detail-value timezone-name"></div>
+            </div>
+        </div>
+    </div>
+</template>
+
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+
+        // Función para agregar mensajes al chat
+        function addMessage(message, isUser = false) {
+            hideTypingIndicator();
+            const messageDiv = document.createElement('div');
+            messageDiv.className = isUser ? 'message user-message' : 'message bot-message';
+            
+            try {
+                if (!isUser && message && typeof message === 'object') {
+                    if ('type' in message && message.type === 'time') {
+                        const template = document.getElementById('time-template');
+                        const timeCard = template.content.cloneNode(true);
+                        
+                        timeCard.querySelector('.city').textContent = message.location;
+                        timeCard.querySelector('.current-time').textContent = message.time;
+                        timeCard.querySelector('.time-format').textContent = 
+                            `(${message.time_12})`;
+                        timeCard.querySelector('.time-moment').textContent = message.moment;
+                        timeCard.querySelector('.weekday').textContent = message.weekday;
+                        timeCard.querySelector('.timezone-name').textContent = 
+                            message.timezone_display;
+                        
+                        messageDiv.appendChild(timeCard);
+                    } else if ('temp' in message) {
+                        const template = document.getElementById('weather-template');
+                        const weatherCard = template.content.cloneNode(true);
+                        
+                        // Actualizar los datos con validación
+                        weatherCard.querySelector('.city').textContent = message.location || 'Ubicación desconocida';
+                        weatherCard.querySelector('.temp').textContent = 
+                            typeof message.temp === 'number' ? Math.round(message.temp) : '--';
+                        weatherCard.querySelector('.condition-text').textContent = 
+                            message.description || 'Sin datos';
+                        weatherCard.querySelector('.weather-detail-value.humidity').textContent = 
+                            message.humidity || '--';
+                        weatherCard.querySelector('.weather-detail-value.wind').textContent = 
+                            typeof message.wind_speed === 'number' ? Math.round(message.wind_speed) : '--';
+                        weatherCard.querySelector('.weather-detail-value.pressure').textContent = 
+                            message.pressure || '--';
+                        
+                        // Agregar hora actual formateada
+                        const now = new Date();
+                        const timeStr = formatTime(now);
+                        weatherCard.querySelector('.time').textContent = timeStr;
+                        
+                        messageDiv.appendChild(weatherCard);
+                    } 
+                } else {
+                    messageDiv.textContent = message;
+                }
+            } catch (error) {
+                console.error('Error al procesar el mensaje:', error);
+                messageDiv.textContent = 'Error al procesar el mensaje';
+            }
+            
+            // Agregar el mensaje al contenedor de mensajes
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Función para mostrar el indicador de escritura
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message bot-message';
+            typingDiv.id = 'typing-indicator';
+            typingDiv.innerHTML = `
+                <div class="typing">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Función para formatear la hora en formato 12 horas
+        function formatTime(date) {
+            const options = { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true
+            };
+            return date.toLocaleTimeString('es-ES', options);
+        }
+
+        // Función para obtener el momento del día
+        function getTimeOfDay(date) {
+            const hour = date.getHours();
+            if (hour >= 5 && hour < 12) {
+                return 'de la mañana';
+            } else if (hour >= 12 && hour < 19) {
+                return 'de la tarde';
+            } else {
+                return 'de la noche';
+            }
+        }
+
+        // Función para ocultar el indicador de escritura
+        function hideTypingIndicator() {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (message === '') return;
+            
+            addMessage(message, true);
+            userInput.value = '';
+            
+            // Remove any existing typing indicators
+            hideTypingIndicator();
+            showTypingIndicator();
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ mensaje: message }), // Changed 'message' to 'mensaje'
+                });
+                
+                const data = await response.json();
+                hideTypingIndicator();
+                
+                // Procesar la respuesta
+                if (data.error) {
+                    addMessage(data.error);
+                } else {
+                    // Convertir la respuesta de texto a objeto si es necesario
+                    let respuesta = data.respuesta;
+                    if (typeof respuesta === 'string' && respuesta.includes('Temperatura:')) {
+                        // Convertir respuesta de texto a objeto
+                        const temp = parseFloat(respuesta.match(/Temperatura: ([\d.]+)/)?.[1] || '0');
+                        const humidity = parseInt(respuesta.match(/Humedad: (\d+)/)?.[1] || '0');
+                        const wind = parseFloat(respuesta.match(/Viento: ([\d.]+)/)?.[1] || '0');
+                        const description = respuesta.match(/Condición: ([^\n]+)/)?.[1] || '';
+                        const location = respuesta.match(/\*([^*]+)\*/)?.[1] || '';
+                        
+                        respuesta = {
+                            location: location,
+                            temp: temp,
+                            humidity: humidity,
+                            wind_speed: wind,
+                            description: description,
+                            pressure: '1013' // valor por defecto
+                        };
+                    }
+                    addMessage(respuesta);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                hideTypingIndicator();
+                addMessage('Lo siento, ocurrió un error al procesar tu solicitud.');
+            }
+        }
+
+        // Función para obtener la ubicación
+        async function getLocation() {
+            if (!navigator.geolocation) {
+                addMessage('❌ Tu navegador no soporta geolocalización');
+                return;
+            }
+
+            try {
+                addMessage('🔍 Solicitando acceso a tu ubicación...', true);
+                
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    });
+                });
+
+                const { latitude: lat, longitude: lon, accuracy } = position.coords;
+                
+                addMessage(`✅ Ubicación detectada (precisión: ±${Math.round(accuracy)}m)`, true);
+
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        mensaje: `@coordenadas:${lat},${lon}`,
+                        accuracy: accuracy
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.respuesta) {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message bot-message';
+
+                    const template = document.getElementById('weather-template');
+                    const weatherCard = template.content.cloneNode(true);
+                    
+                    // Actualizar datos del clima
+                    weatherCard.querySelector('.city').textContent = data.respuesta.location;
+                    weatherCard.querySelector('.temp').textContent = 
+                        typeof data.respuesta.temp === 'number' ? Math.round(data.respuesta.temp) : '--';
+                    
+                    // Actualizar condición y icono
+                    const weatherCondition = weatherCard.querySelector('.weather-condition');
+                    weatherCondition.innerHTML = `
+                        <div class="condition-icon">${data.respuesta.icon || '🌤️'}</div>
+                        <div class="condition-text">${data.respuesta.description}</div>
+                    `;
+                    
+                    // Actualizar detalles
+                    weatherCard.querySelector('.weather-detail-value.humidity').textContent = 
+                        data.respuesta.humidity || '--';
+                    weatherCard.querySelector('.weather-detail-value.wind').textContent = 
+                        typeof data.respuesta.wind_speed === 'number' ? Math.round(data.respuesta.wind_speed) : '--';
+                    weatherCard.querySelector('.weather-detail-value.pressure').textContent = 
+                        data.respuesta.pressure || '--';
+                    
+                    // Actualizar hora local
+                    const localTime = getLocalTime(data.respuesta.timezone || 0);
+                    weatherCard.querySelector('.time').textContent = localTime.time;
+                    
+                    messageDiv.appendChild(weatherCard);
+                    chatMessages.appendChild(messageDiv);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
+                
+            } catch (error) {
+                let errorMessage = '❌ Error al obtener ubicación: ';
+                if (error.code === 1) {
+                    errorMessage += 'Necesito permiso para acceder a tu ubicación.';
+                } else if (error.code === 2) {
+                    errorMessage += 'No se pudo detectar tu ubicación actual.';
+                } else if (error.code === 3) {
+                    errorMessage += 'Tiempo de espera agotado.';
+                } else {
+                    errorMessage += error.message || 'Error desconocido';
+                }
+                addMessage(errorMessage);
+            }
+        }
+
+        // Función para obtener la hora local basada en la zona horaria
+function getLocalTime(timezone) {
+    try {
+        // Obtener la hora UTC actual
+        const now = new Date();
+        
+        // Convertir el timestamp a milisegundos y ajustar según la zona horaria
+        const utcTime = now.getTime();
+        const localTime = new Date(utcTime + (timezone * 1000));
+        
+        // Formatear hora con Intl.DateTimeFormat
+        const timeFormatter = new Intl.DateTimeFormat('es-ES', {
+            timeZone: 'UTC',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+            hourCycle: 'h12'
+        });
+
+        const dateFormatter = new Intl.DateTimeFormat('es-ES', {
+            timeZone: 'UTC',
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
+
+        // Determinar el momento del día
+        const hora = localTime.getHours();
+        let momento;
+        if (hora >= 5 && hora < 12) {
+            momento = "de la mañana";
+        } else if (hora >= 12 && hora < 20) {
+            momento = "de la tarde";
+        } else {
+            momento = "de la noche";
+        }
+
+        // Formatear la salida
+        const formattedTime = timeFormatter.format(localTime)
+            .toLowerCase()
+            .replace(/\s*(a\.m\.|p\.m\.)\s*/, ' $1'); // Formato correcto AM/PM
+
+        // Crear el texto completo
+        const timeString = `${formattedTime} ${momento}`;
+        const dateString = `${dateFormatter.format(localTime)}`;
+
+        return {
+            time: timeString,
+            date: dateString,
+            moment: momento
+        };
+    } catch (error) {
+        console.error('Error al obtener la hora local:', error);
+        return {
+            time: '--:--',
+            date: 'Error al obtener la fecha',
+            moment: ''
+        };
+    }
+}
+
+        // Función para actualizar la tarjeta de hora automáticamente
+function updateTimeCard(timeCard, timezone) {
+    // Obtener elementos
+    const timeDisplay = timeCard.querySelector('.current-time');
+    const timeFormat = timeCard.querySelector('.time-format');
+    const timeMoment = timeCard.querySelector('.time-moment');
+    const weekdayDisplay = timeCard.querySelector('.weekday');
+    const timezoneDisplay = timeCard.querySelector('.timezone-name');
+    
+    // Aplicar estilos iniciales
+    timeDisplay.style.cssText = `
+        font-size: 4.5rem;
+        font-weight: 700;
+        color: #1a202c;
+        line-height: 1;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+    
+    timeFormat.style.cssText = `
+        font-size: 1.25rem;
+        color: #4a5568;
+        margin-top: 0.5rem;
+        font-weight: 500;
+        font-family: inherit;
+    `;
+    
+    timeMoment.style.cssText = `
+        font-size: 1.25rem;
+        color: #4a5568;
+        margin-top: 0.5rem;
+        font-weight: 500;
+        font-family: inherit;
+    `;
+    
+    weekdayDisplay.style.cssText = `
+        font-size: 1.1rem;
+        color: #4a5568;
+        font-weight: 500;
+        text-transform: capitalize;
+        font-family: inherit;
+    `;
+    
+    timezoneDisplay.style.cssText = `
+        font-size: 1.1rem;
+        color: #4a5568;
+        font-weight: 500;
+        font-family: inherit;
+    `;
+
+    function updateTime() {
+        try {
+            const now = new Date();
+            
+            // Formato 24h
+            const time24 = new Intl.DateTimeFormat('es-ES', {
+                timeZone: timezone,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).format(now);
+            
+            // Formato 12h
+            const time12 = new Intl.DateTimeFormat('es-ES', {
+                timeZone: timezone,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true,
+                hourCycle: 'h12'
+            }).format(now).toLowerCase();
+            
+            // Día de la semana
+            const weekday = new Intl.DateTimeFormat('es-ES', {
+                timeZone: timezone,
+                weekday: 'long'
+            }).format(now);
+            
+            // Determinar momento del día
+            const hour = parseInt(time24.split(':')[0]);
+            let moment = '';
+            if (hour >= 5 && hour < 12) moment = 'de la mañana';
+            else if (hour >= 12 && hour < 20) moment = 'de la tarde';
+            else moment = 'de la noche';
+            
+            // Actualizar contenido
+            timeDisplay.textContent = time24;
+            timeFormat.textContent = `(${time12})`;
+            timeMoment.textContent = moment;
+            weekdayDisplay.textContent = weekday;
+            
+        } catch (error) {
+            console.error('Error actualizando la hora:', error);
+            timeDisplay.textContent = '--:--';
+        }
+    }
+    
+    updateTime();
+    return setInterval(updateTime, 1000);
+}
+
+// Modificar función addMessage para manejar tarjetas de hora
+function addMessage(message, isUser = false) {
+    hideTypingIndicator();
+    const messageDiv = document.createElement('div');
+    messageDiv.className = isUser ? 'message user-message' : 'message bot-message';
+    
+    try {
+        if (!isUser && message && typeof message === 'object') {
+            if ('type' in message && message.type === 'time') {
+                const template = document.getElementById('time-template');
+                const timeCard = template.content.cloneNode(true);
+                
+                timeCard.querySelector('.city').textContent = message.location;
+                timeCard.querySelector('.current-time').textContent = message.time;
+                timeCard.querySelector('.time-format').textContent = 
+                    `(${message.time_12})`;
+                timeCard.querySelector('.time-moment').textContent = message.moment;
+                timeCard.querySelector('.weekday').textContent = message.weekday;
+                timeCard.querySelector('.timezone-name').textContent = 
+                    message.timezone_display;
+                
+                messageDiv.appendChild(timeCard);
+            } else if ('temp' in message) {
+                const template = document.getElementById('weather-template');
+                const weatherCard = template.content.cloneNode(true);
+                
+                // Actualizar los datos con validación
+                weatherCard.querySelector('.city').textContent = message.location || 'Ubicación desconocida';
+                weatherCard.querySelector('.temp').textContent = 
+                    typeof message.temp === 'number' ? Math.round(message.temp) : '--';
+                weatherCard.querySelector('.condition-text').textContent = 
+                    message.description || 'Sin datos';
+                weatherCard.querySelector('.weather-detail-value.humidity').textContent = 
+                    message.humidity || '--';
+                weatherCard.querySelector('.weather-detail-value.wind').textContent = 
+                    typeof message.wind_speed === 'number' ? Math.round(message.wind_speed) : '--';
+                weatherCard.querySelector('.weather-detail-value.pressure').textContent = 
+                    message.pressure || '--';
+                
+                // Agregar hora actual formateada
+                const now = new Date();
+                const timeStr = formatTime(now);
+                weatherCard.querySelector('.time').textContent = timeStr;
+                
+                messageDiv.appendChild(weatherCard);
+            } 
+        } else {
+            messageDiv.textContent = message;
+        }
+    } catch (error) {
+        console.error('Error al procesar el mensaje:', error);
+        messageDiv.textContent = 'Error al procesar el mensaje';
+    }
+    
+    // Agregar el mensaje al contenedor de mensajes
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Cleanup function for time card intervals
+function cleanupTimeCards() {
+    document.querySelectorAll('.time-card').forEach(card => {
+        const interval = card.dataset.updateInterval;
+        if (interval) clearInterval(parseInt(interval));
+    });
+}
+
+        // Función para obtener la ubicación
+        async function getLocation() {
+            if (!navigator.geolocation) {
+                addMessage('❌ Tu navegador no soporta geolocalización');
+                return;
+            }
+
+            try {
+                addMessage('🔍 Solicitando acceso a tu ubicación...', true);
+                
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    });
+                });
+
+                const { latitude: lat, longitude: lon, accuracy } = position.coords;
+                
+                addMessage(`✅ Ubicación detectada (precisión: ±${Math.round(accuracy)}m)`, true);
+
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        mensaje: `@coordenadas:${lat},${lon}`,
+                        accuracy: accuracy
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.respuesta) {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message bot-message';
+
+                    const template = document.getElementById('weather-template');
+                    const weatherCard = template.content.cloneNode(true);
+                    
+                    // Actualizar datos del clima
+                    weatherCard.querySelector('.city').textContent = data.respuesta.location;
+                    weatherCard.querySelector('.temp').textContent = 
+                        typeof data.respuesta.temp === 'number' ? Math.round(data.respuesta.temp) : '--';
+                    
+                    // Actualizar condición y icono
+                    const weatherCondition = weatherCard.querySelector('.weather-condition');
+                    weatherCondition.innerHTML = `
+                        <div class="condition-icon">${data.respuesta.icon || '🌤️'}</div>
+                        <div class="condition-text">${data.respuesta.description}</div>
+                    `;
+                    
+                    // Actualizar detalles
+                    weatherCard.querySelector('.weather-detail-value.humidity').textContent = 
+                        data.respuesta.humidity || '--';
+                    weatherCard.querySelector('.weather-detail-value.wind').textContent = 
+                        typeof data.respuesta.wind_speed === 'number' ? Math.round(data.respuesta.wind_speed) : '--';
+                    weatherCard.querySelector('.weather-detail-value.pressure').textContent = 
+                        data.respuesta.pressure || '--';
+                    
+                    // Actualizar hora local
+                    const localTime = getLocalTime(data.respuesta.timezone || 0);
+                    weatherCard.querySelector('.time').textContent = localTime.time;
+                    
+                    messageDiv.appendChild(weatherCard);
+                    chatMessages.appendChild(messageDiv);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
+                
+            } catch (error) {
+                let errorMessage = '❌ Error al obtener ubicación: ';
+                if (error.code === 1) {
+                    errorMessage += 'Necesito permiso para acceder a tu ubicación.';
+                } else if (error.code === 2) {
+                    errorMessage += 'No se pudo detectar tu ubicación actual.';
+                } else if (error.code === 3) {
+                    errorMessage += 'Tiempo de espera agotado.';
+                } else {
+                    errorMessage += error.message || 'Error desconocido';
+                }
+                addMessage(errorMessage);
+            }
+        }
+
+        // Manejar el envío del formulario con Enter
+        userInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Manejar clic en el botón de enviar
+        sendButton.addEventListener('click', sendMessage);
+
+        // Manejar clic en el botón de ubicación
+        document.getElementById('location-btn').addEventListener('click', getLocation);
+    </script>
+</body>
+</html>
